@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,11 +9,14 @@ from rl_neuro_training.fitness import PickAndPlaceStageScores
 from rl_neuro_training.logger import GenerationStats, TrainingLogger
 from rl_neuro_training.trainer import ChampionGenomeRecord, TrainingResult
 from scripts.train_pick_place import (
+    build_robosuite_config,
     build_trainer_config,
     champion_metadata,
     choose_survivor_count,
+    load_initial_population,
     parse_args,
     progress_records_from_generation_stats,
+    run_config_metadata,
     save_training_artifacts,
 )
 
@@ -134,6 +138,71 @@ class TrainPickPlaceScriptTest(unittest.TestCase):
             config.evaluator_config.network_shape.genome_length,
         )
 
+    def test_build_robosuite_config_includes_optional_env_seed(self):
+        args = parse_args(
+            [
+                "--max-steps",
+                "9",
+                "--object-type",
+                "milk",
+                "--env-seed",
+                "123",
+            ]
+        )
+
+        config = build_robosuite_config(args)
+
+        self.assertEqual(config.env_kwargs["horizon"], 9)
+        self.assertEqual(config.env_kwargs["object_type"], "milk")
+        self.assertEqual(config.env_kwargs["seed"], 123)
+
+    def test_load_initial_population_reads_2d_numpy_array(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            population_path = Path(temp_dir) / "final_population.npy"
+            expected = np.array([[0.1, 0.2], [0.3, 0.4]])
+            np.save(population_path, expected)
+
+            population = load_initial_population(population_path)
+
+        np.testing.assert_array_equal(population, expected)
+
+    def test_load_initial_population_rejects_non_2d_array(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            population_path = Path(temp_dir) / "bad_population.npy"
+            np.save(population_path, np.array([0.1, 0.2]))
+
+            with self.assertRaisesRegex(ValueError, "2D"):
+                load_initial_population(population_path)
+
+    def test_run_config_metadata_contains_replay_settings(self):
+        args = parse_args(
+            [
+                "--hidden-size",
+                "4",
+                "--max-steps",
+                "7",
+                "--action-mode",
+                "joint",
+                "--object-type",
+                "milk",
+                "--env-seed",
+                "123",
+            ]
+        )
+        trainer_config = build_trainer_config(args)
+
+        metadata = run_config_metadata(args, trainer_config)
+
+        self.assertEqual(metadata["replay"]["hidden_size"], 4)
+        self.assertEqual(metadata["replay"]["max_steps"], 7)
+        self.assertEqual(metadata["replay"]["action_mode"], "joint")
+        self.assertEqual(metadata["replay"]["object_type"], "milk")
+        self.assertEqual(metadata["replay"]["env_seed"], 123)
+        self.assertEqual(
+            metadata["network_shape"]["genome_length"],
+            trainer_config.evaluator_config.network_shape.genome_length,
+        )
+
     def test_progress_records_from_generation_stats_tracks_running_values(self):
         history = (
             make_generation_stats(0, 0.6, 0.4, 0.2),
@@ -178,9 +247,14 @@ class TrainPickPlaceScriptTest(unittest.TestCase):
             self.assertTrue(paths.final_population.exists())
             self.assertTrue(paths.generation_fitness_scores.exists())
             self.assertTrue(paths.fitness_progress_svg.exists())
+            self.assertTrue(paths.run_config.exists())
             self.assertIn(
                 "<svg",
                 paths.fitness_progress_svg.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                json.loads(paths.run_config.read_text(encoding="utf-8")),
+                {"format_version": 1},
             )
 
 

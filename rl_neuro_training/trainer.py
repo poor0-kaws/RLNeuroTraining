@@ -29,7 +29,6 @@ from rl_neuro_training.logger import GenerationStats, TrainingLogger
 from rl_neuro_training.population import (
     PopulationInitializerConfig,
     create_initial_population,
-    validate_population,
 )
 from rl_neuro_training.reproducer import (
     ReproducerConfig,
@@ -211,9 +210,47 @@ def _starting_population(
         return create_initial_population(config.population_config)
 
     population = np.asarray(initial_population, dtype=float)
-    validate_population(population, config.population_config)
+    _validate_resumed_population(population, config)
 
     return population.copy()
+
+
+def _validate_resumed_population(
+    population: np.ndarray,
+    config: TrainerConfig,
+) -> None:
+    """Check a saved population before training continues from it.
+
+    Generation zero uses the tighter population initializer range.
+    A resumed population may contain later mutated genes, so we check it against
+    the reproducer's wider safety limits instead.
+    """
+
+    if population.ndim != 2:
+        raise ValueError("initial_population must be a 2D array")
+
+    expected_shape = (
+        config.population_config.population_size,
+        config.population_config.genome_length,
+    )
+
+    if population.shape != expected_shape:
+        raise ValueError(
+            "initial_population has the wrong shape: "
+            f"expected {expected_shape}, got {population.shape}"
+        )
+
+    if not np.all(np.isfinite(population)):
+        raise ValueError("initial_population must only contain finite numbers")
+
+    min_gene_value = config.reproducer_config.min_gene_value
+    max_gene_value = config.reproducer_config.max_gene_value
+
+    if np.any(population < min_gene_value):
+        raise ValueError("initial_population contains a value below min_gene_value")
+
+    if np.any(population > max_gene_value):
+        raise ValueError("initial_population contains a value above max_gene_value")
 
 
 def _update_champion(
@@ -248,4 +285,3 @@ def _reproducer_config_for_generation(
         return config
 
     return replace(config, seed=config.seed + generation_number)
-

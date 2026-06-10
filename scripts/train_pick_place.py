@@ -61,6 +61,7 @@ class TrainingArtifactPaths:
     final_population: Path
     generation_fitness_scores: Path
     fitness_progress_svg: Path
+    run_config: Path
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -82,9 +83,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mutation-rate", type=float, default=0.05)
     parser.add_argument("--mutation-strength", type=float, default=0.10)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument(
+        "--env-seed",
+        type=int,
+        default=None,
+        help="Optional Robosuite environment seed for repeatable resets.",
+    )
     parser.add_argument("--object-type", default="can")
     parser.add_argument("--table-height", type=float, default=0.8)
     parser.add_argument("--output-dir", default="runs/pick_place")
+    parser.add_argument(
+        "--resume-population",
+        default=None,
+        help="Optional final_population.npy file to continue training from.",
+    )
     parser.add_argument(
         "--render",
         action="store_true",
@@ -136,18 +148,23 @@ def build_trainer_config(args: argparse.Namespace) -> TrainerConfig:
 def build_robosuite_config(args: argparse.Namespace) -> RobosuitePickAndPlaceConfig:
     """Build the real Panda PickPlace simulator config."""
 
+    env_kwargs = {
+        "use_object_obs": True,
+        "single_object_mode": 2,
+        "object_type": args.object_type,
+        "horizon": args.max_steps,
+    }
+
+    if args.env_seed is not None:
+        env_kwargs["seed"] = args.env_seed
+
     return RobosuitePickAndPlaceConfig(
         has_renderer=args.render,
         has_offscreen_renderer=False,
         use_camera_obs=False,
         render_each_step=args.render,
         table_height=args.table_height,
-        env_kwargs={
-            "use_object_obs": True,
-            "single_object_mode": 2,
-            "object_type": args.object_type,
-            "horizon": args.max_steps,
-        },
+        env_kwargs=env_kwargs,
     )
 
 
@@ -192,6 +209,7 @@ def save_training_artifacts(
     result: TrainingResult,
     logger: TrainingLogger,
     output_dir: Path,
+    run_config: dict[str, object] | None = None,
 ) -> TrainingArtifactPaths:
     """Save the useful files from one training run."""
 
@@ -205,6 +223,7 @@ def save_training_artifacts(
         final_population=output_dir / "final_population.npy",
         generation_fitness_scores=output_dir / "generation_fitness_scores.npy",
         fitness_progress_svg=output_dir / "fitness_progress.svg",
+        run_config=output_dir / "run_config.json",
     )
 
     logger.write_csv(paths.csv_log)
@@ -227,8 +246,72 @@ def save_training_artifacts(
         FitnessProgressGraphConfig(),
     )
     paths.fitness_progress_svg.write_text(svg, encoding="utf-8")
+    paths.run_config.write_text(
+        json.dumps(run_config or {"format_version": 1}, indent=2),
+        encoding="utf-8",
+    )
 
     return paths
+
+
+def load_initial_population(path: str | Path) -> np.ndarray:
+    """Load a saved population for resume training."""
+
+    population_path = Path(path)
+
+    if not population_path.exists():
+        raise FileNotFoundError(
+            f"resume population file does not exist: {population_path}"
+        )
+
+    population = np.asarray(np.load(population_path), dtype=float)
+
+    if population.ndim != 2:
+        raise ValueError("resume population must be a 2D array")
+
+    if not np.all(np.isfinite(population)):
+        raise ValueError("resume population must only contain finite numbers")
+
+    return population
+
+
+def run_config_metadata(
+    args: argparse.Namespace,
+    trainer_config: TrainerConfig,
+) -> dict[str, object]:
+    """Create the JSON config that lets replay know how training was run."""
+
+    network_shape = trainer_config.evaluator_config.network_shape
+
+    return {
+        "format_version": 1,
+        "script": "scripts/train_pick_place.py",
+        "training": {
+            "generations": args.generations,
+            "population_size": args.population_size,
+            "survivor_fraction": args.survivor_fraction,
+            "survivor_count": trainer_config.selector_config.survivor_count,
+            "elite_count": args.elite_count,
+            "mutation_rate": args.mutation_rate,
+            "mutation_strength": args.mutation_strength,
+            "seed": args.seed,
+            "resume_population": args.resume_population,
+        },
+        "replay": {
+            "hidden_size": args.hidden_size,
+            "max_steps": args.max_steps,
+            "action_mode": args.action_mode,
+            "object_type": args.object_type,
+            "table_height": args.table_height,
+            "env_seed": args.env_seed,
+        },
+        "network_shape": {
+            "input_size": network_shape.input_size,
+            "hidden_size": network_shape.hidden_size,
+            "output_size": network_shape.output_size,
+            "genome_length": network_shape.genome_length,
+        },
+    }
 
 
 def progress_records_from_generation_stats(
@@ -319,6 +402,7 @@ def print_summary(result: TrainingResult, paths: TrainingArtifactPaths) -> None:
     print(f"CSV log: {paths.csv_log}")
     print(f"Champion genome: {paths.champion_genome}")
     print(f"Progress graph: {paths.fitness_progress_svg}")
+    print(f"Run config: {paths.run_config}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -330,16 +414,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     simulator_factory = make_robosuite_pick_and_place_simulator_factory(
         robosuite_config,
     )
+    initial_population = None
+
+    if args.resume_population is not None:
+        initial_population = load_initial_population(args.resume_population)
 
     result = train(
         simulator_factory=simulator_factory,
         config=trainer_config,
+        initial_population=initial_population,
         logger=logger,
     )
     paths = save_training_artifacts(
         result=result,
         logger=logger,
         output_dir=output_dir,
+        run_config=run_config_metadata(args, trainer_config),
     )
     print_summary(result, paths)
 

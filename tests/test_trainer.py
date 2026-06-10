@@ -142,6 +142,33 @@ class TrainerTest(unittest.TestCase):
         self.assertEqual(len(result.history), 1)
         self.assertEqual(result.champion.fitness, 0.30)
 
+    def test_train_accepts_resumed_population_inside_mutation_limits(self):
+        config = make_config(population_size=2, generation_count=1)
+        genome_length = config.population_config.genome_length
+        initial_population = np.array(
+            [
+                np.full(genome_length, 1.5),
+                np.full(genome_length, -1.5),
+            ]
+        )
+        evaluation_results = [
+            make_evaluation_result(0.10),
+            make_evaluation_result(0.20),
+        ]
+
+        with patch(
+            "rl_neuro_training.trainer.evaluate_population",
+            return_value=evaluation_results,
+        ):
+            result = train(
+                simulator_factory=lambda: None,
+                config=config,
+                initial_population=initial_population,
+            )
+
+        self.assertEqual(len(result.history), 1)
+        self.assertEqual(result.champion.fitness, 0.20)
+
     def test_fitness_scores_from_results_returns_one_score_per_result(self):
         results = [
             make_evaluation_result(0.10),
