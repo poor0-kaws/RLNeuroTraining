@@ -82,7 +82,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--run-config",
         default=None,
-        help="Optional run_config.json from training. By default, replay looks next to the genome.",
+        help=(
+            "Optional run_config.json from training. "
+            "By default, replay looks next to the genome."
+        ),
     )
     parser.add_argument("--hidden-size", type=int, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
@@ -144,19 +147,44 @@ def resolve_replay_settings(args: argparse.Namespace) -> ReplaySettings:
         champion_genome=champion_genome,
         run_config=run_config_path,
         hidden_size=int(
-            _setting_value(args.hidden_size, replay_config, "hidden_size", DEFAULT_HIDDEN_SIZE)
+            _setting_value(
+                args.hidden_size,
+                replay_config,
+                "hidden_size",
+                DEFAULT_HIDDEN_SIZE,
+            )
         ),
         max_steps=int(
-            _setting_value(args.max_steps, replay_config, "max_steps", DEFAULT_MAX_STEPS)
+            _setting_value(
+                args.max_steps,
+                replay_config,
+                "max_steps",
+                DEFAULT_MAX_STEPS,
+            )
         ),
         action_mode=str(
-            _setting_value(args.action_mode, replay_config, "action_mode", DEFAULT_ACTION_MODE)
+            _setting_value(
+                args.action_mode,
+                replay_config,
+                "action_mode",
+                DEFAULT_ACTION_MODE,
+            )
         ),
         object_type=str(
-            _setting_value(args.object_type, replay_config, "object_type", DEFAULT_OBJECT_TYPE)
+            _setting_value(
+                args.object_type,
+                replay_config,
+                "object_type",
+                DEFAULT_OBJECT_TYPE,
+            )
         ),
         table_height=float(
-            _setting_value(args.table_height, replay_config, "table_height", DEFAULT_TABLE_HEIGHT)
+            _setting_value(
+                args.table_height,
+                replay_config,
+                "table_height",
+                DEFAULT_TABLE_HEIGHT,
+            )
         ),
         env_seed=_optional_int(
             _setting_value(args.env_seed, replay_config, "env_seed", None)
