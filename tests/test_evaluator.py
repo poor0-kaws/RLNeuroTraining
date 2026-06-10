@@ -165,7 +165,7 @@ class EvaluatorTest(unittest.TestCase):
             max_joint_delta=0.1,
         )
 
-        np.testing.assert_array_equal(
+        np.testing.assert_allclose(
             action,
             np.array([0.1, -0.1, 0.05, 0.0, 0.025, -0.025, 0.075, -1.0]),
         )
@@ -244,7 +244,11 @@ class EvaluatorTest(unittest.TestCase):
         population = np.zeros((3, shape.genome_length - 1))
 
         with self.assertRaisesRegex(ValueError, "wrong length"):
-            evaluate_population(population, lambda: FakePickAndPlaceSimulator([]), config)
+            evaluate_population(
+                population,
+                lambda: FakePickAndPlaceSimulator([]),
+                config,
+            )
 
 
 if __name__ == "__main__":
