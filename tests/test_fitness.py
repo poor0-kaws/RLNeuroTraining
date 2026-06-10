@@ -88,7 +88,7 @@ class PickAndPlaceFitnessTest(unittest.TestCase):
         result = score_pick_and_place_episode(episode)
 
         self.assertGreater(result.total, 0.95)
-        self.assertEqual(result.stages.placement_stability, 1.0)
+        self.assertGreater(result.stages.placement_stability, 0.90)
 
     def test_unstable_placement_scores_less_than_stable_placement(self):
         unstable_episode = [
@@ -120,6 +120,51 @@ class PickAndPlaceFitnessTest(unittest.TestCase):
         self.assertGreater(stable_result.total, unstable_result.total)
         self.assertEqual(unstable_result.stages.placement_stability, 0.0)
         self.assertEqual(stable_result.stages.placement_stability, 1.0)
+
+    def test_earlier_stable_placement_scores_better_than_later_stability(self):
+        early_stable_episode = [
+            PickAndPlaceObservation(
+                gripper_position=(0.0, 0.0, 0.0),
+                object_position=(0.0, 0.0, 0.0),
+                target_position=(0.0, 0.0, 0.0),
+                is_grasped=False,
+                table_height=0.0,
+                object_speed=0.0,
+            )
+            for _ in range(20)
+        ]
+
+        late_stable_episode = [
+            PickAndPlaceObservation(
+                gripper_position=(1.0, 0.0, 0.0),
+                object_position=(1.0, 0.0, 0.0),
+                target_position=(0.0, 0.0, 0.0),
+                is_grasped=False,
+                table_height=0.0,
+                object_speed=1.0,
+            )
+            for _ in range(10)
+        ]
+
+        for _ in range(10):
+            late_stable_episode.append(
+                PickAndPlaceObservation(
+                    gripper_position=(0.0, 0.0, 0.0),
+                    object_position=(0.0, 0.0, 0.0),
+                    target_position=(0.0, 0.0, 0.0),
+                    is_grasped=False,
+                    table_height=0.0,
+                    object_speed=0.0,
+                )
+            )
+
+        early_result = score_pick_and_place_episode(early_stable_episode)
+        late_result = score_pick_and_place_episode(late_stable_episode)
+
+        self.assertGreater(
+            early_result.stages.placement_stability,
+            late_result.stages.placement_stability,
+        )
 
 
 if __name__ == "__main__":

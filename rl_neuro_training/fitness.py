@@ -71,6 +71,9 @@ class PickAndPlaceFitnessConfig:
     placement_accuracy_share: float = 0.60
     placement_stability_share: float = 0.40
 
+    stable_duration_share: float = 0.80
+    stable_earliness_share: float = 0.20
+
 
 @dataclass(frozen=True)
 class PickAndPlaceStageScores:
@@ -259,19 +262,34 @@ def _score_placement_stability(
 ) -> float:
     longest_stable_run = 0
     current_stable_run = 0
+    first_stable_index = None
 
-    for observation in episode:
+    for index, observation in enumerate(episode):
         if _is_stably_placed(observation, config):
+            if first_stable_index is None:
+                first_stable_index = index
+
             current_stable_run += 1
             longest_stable_run = max(longest_stable_run, current_stable_run)
             continue
 
         current_stable_run = 0
 
-    return _progress_score(
+    if first_stable_index is None:
+        return 0.0
+
+    duration_score = _progress_score(
         current_value=longest_stable_run,
         target_value=config.stable_steps_required,
     )
+
+    earliness_score = 1.0 - (first_stable_index / len(episode))
+
+    stability_score = 0.0
+    stability_score += config.stable_duration_share * duration_score
+    stability_score += config.stable_earliness_share * earliness_score
+
+    return _clamp_01(stability_score)
 
 
 def _is_stably_placed(
@@ -382,6 +400,11 @@ def _validate_config(config: PickAndPlaceFitnessConfig) -> None:
     if config.stable_steps_required <= 0:
         raise ValueError("stable_steps_required must be greater than zero")
 
+    stable_share = config.stable_duration_share + config.stable_earliness_share
+
+    if abs(stable_share - 1.0) > 0.000001:
+        raise ValueError("stable placement shares must add up to 1.0")
+
 
 def _clamp_01(value: float) -> float:
     if value < 0.0:
@@ -405,4 +428,3 @@ def _empty_result() -> PickAndPlaceFitnessResult:
     )
 
     return PickAndPlaceFitnessResult(total=0.0, stages=stages)
-
