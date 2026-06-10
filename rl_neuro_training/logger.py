@@ -29,6 +29,7 @@ GENERATION_STATS_CSV_FIELDS = [
     "worst_fitness",
     "fitness_std",
     "best_genome_index",
+    "worst_genome_index",
     "best_reaching",
     "best_grasping",
     "best_lifting",
@@ -36,6 +37,13 @@ GENERATION_STATS_CSV_FIELDS = [
     "best_placing",
     "best_placement_accuracy",
     "best_placement_stability",
+    "average_reaching",
+    "average_grasping",
+    "average_lifting",
+    "average_moving",
+    "average_placing",
+    "average_placement_accuracy",
+    "average_placement_stability",
 ]
 
 
@@ -55,6 +63,7 @@ class GenerationStats:
     worst_fitness: float
     fitness_std: float
     best_genome_index: int
+    worst_genome_index: int
     best_reaching: float
     best_grasping: float
     best_lifting: float
@@ -62,6 +71,13 @@ class GenerationStats:
     best_placing: float
     best_placement_accuracy: float
     best_placement_stability: float
+    average_reaching: float
+    average_grasping: float
+    average_lifting: float
+    average_moving: float
+    average_placing: float
+    average_placement_accuracy: float
+    average_placement_stability: float
 
 
 class TrainingLogger:
@@ -135,8 +151,10 @@ def summarize_generation(
 
     fitness_values = _fitness_values_from_results(results)
     best_genome_index = int(np.argmax(fitness_values))
+    worst_genome_index = int(np.argmin(fitness_values))
     best_result = results[best_genome_index]
     best_stages = best_result.fitness.stages
+    average_stages = _average_stage_scores(results)
 
     return GenerationStats(
         generation_number=generation_number,
@@ -147,6 +165,7 @@ def summarize_generation(
         worst_fitness=float(np.min(fitness_values)),
         fitness_std=float(np.std(fitness_values)),
         best_genome_index=best_genome_index,
+        worst_genome_index=worst_genome_index,
         best_reaching=float(best_stages.reaching),
         best_grasping=float(best_stages.grasping),
         best_lifting=float(best_stages.lifting),
@@ -154,6 +173,13 @@ def summarize_generation(
         best_placing=float(best_stages.placing),
         best_placement_accuracy=float(best_stages.placement_accuracy),
         best_placement_stability=float(best_stages.placement_stability),
+        average_reaching=average_stages["reaching"],
+        average_grasping=average_stages["grasping"],
+        average_lifting=average_stages["lifting"],
+        average_moving=average_stages["moving"],
+        average_placing=average_stages["placing"],
+        average_placement_accuracy=average_stages["placement_accuracy"],
+        average_placement_stability=average_stages["placement_stability"],
     )
 
 
@@ -171,6 +197,7 @@ def generation_stats_to_row(stats: GenerationStats) -> dict[str, float | int]:
         "worst_fitness": stats_dict["worst_fitness"],
         "fitness_std": stats_dict["fitness_std"],
         "best_genome_index": stats_dict["best_genome_index"],
+        "worst_genome_index": stats_dict["worst_genome_index"],
         "best_reaching": stats_dict["best_reaching"],
         "best_grasping": stats_dict["best_grasping"],
         "best_lifting": stats_dict["best_lifting"],
@@ -178,6 +205,13 @@ def generation_stats_to_row(stats: GenerationStats) -> dict[str, float | int]:
         "best_placing": stats_dict["best_placing"],
         "best_placement_accuracy": stats_dict["best_placement_accuracy"],
         "best_placement_stability": stats_dict["best_placement_stability"],
+        "average_reaching": stats_dict["average_reaching"],
+        "average_grasping": stats_dict["average_grasping"],
+        "average_lifting": stats_dict["average_lifting"],
+        "average_moving": stats_dict["average_moving"],
+        "average_placing": stats_dict["average_placing"],
+        "average_placement_accuracy": stats_dict["average_placement_accuracy"],
+        "average_placement_stability": stats_dict["average_placement_stability"],
     }
 
 
@@ -193,3 +227,50 @@ def _fitness_values_from_results(
         raise ValueError("fitness values must only contain finite numbers")
 
     return fitness_values
+
+
+def _average_stage_scores(
+    evaluation_results: Sequence[GenomeEvaluationResult],
+) -> dict[str, float]:
+    reaching = []
+    grasping = []
+    lifting = []
+    moving = []
+    placing = []
+    placement_accuracy = []
+    placement_stability = []
+
+    for result in evaluation_results:
+        stages = result.fitness.stages
+        reaching.append(stages.reaching)
+        grasping.append(stages.grasping)
+        lifting.append(stages.lifting)
+        moving.append(stages.moving)
+        placing.append(stages.placing)
+        placement_accuracy.append(stages.placement_accuracy)
+        placement_stability.append(stages.placement_stability)
+
+    return {
+        "reaching": _finite_mean(reaching, "reaching"),
+        "grasping": _finite_mean(grasping, "grasping"),
+        "lifting": _finite_mean(lifting, "lifting"),
+        "moving": _finite_mean(moving, "moving"),
+        "placing": _finite_mean(placing, "placing"),
+        "placement_accuracy": _finite_mean(
+            placement_accuracy,
+            "placement_accuracy",
+        ),
+        "placement_stability": _finite_mean(
+            placement_stability,
+            "placement_stability",
+        ),
+    }
+
+
+def _finite_mean(values: Sequence[float], name: str) -> float:
+    value_array = np.asarray(values, dtype=float)
+
+    if not np.all(np.isfinite(value_array)):
+        raise ValueError(f"{name} values must only contain finite numbers")
+
+    return float(np.mean(value_array))

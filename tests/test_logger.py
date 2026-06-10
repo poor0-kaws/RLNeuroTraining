@@ -71,6 +71,7 @@ class LoggerTest(unittest.TestCase):
         self.assertEqual(stats.generation_number, 3)
         self.assertEqual(stats.population_size, 3)
         self.assertEqual(stats.best_genome_index, 1)
+        self.assertEqual(stats.worst_genome_index, 0)
         self.assertEqual(stats.best_fitness, 0.80)
         self.assertEqual(stats.median_fitness, 0.40)
         self.assertEqual(stats.worst_fitness, 0.20)
@@ -83,6 +84,13 @@ class LoggerTest(unittest.TestCase):
         self.assertEqual(stats.best_placing, 0.6)
         self.assertEqual(stats.best_placement_accuracy, 0.5)
         self.assertEqual(stats.best_placement_stability, 0.4)
+        self.assertAlmostEqual(stats.average_reaching, 1.0 / 3.0)
+        self.assertAlmostEqual(stats.average_grasping, 0.9 / 3.0)
+        self.assertAlmostEqual(stats.average_lifting, 0.8 / 3.0)
+        self.assertAlmostEqual(stats.average_moving, 0.7 / 3.0)
+        self.assertAlmostEqual(stats.average_placing, 0.6 / 3.0)
+        self.assertAlmostEqual(stats.average_placement_accuracy, 0.5 / 3.0)
+        self.assertAlmostEqual(stats.average_placement_stability, 0.4 / 3.0)
 
     def test_best_genome_index_uses_first_best_result_when_tied(self):
         results = [
@@ -126,6 +134,7 @@ class LoggerTest(unittest.TestCase):
         self.assertEqual(row["population_size"], 1)
         self.assertEqual(row["best_fitness"], 0.50)
         self.assertEqual(row["best_reaching"], 1.0)
+        self.assertEqual(row["average_reaching"], 1.0)
 
     def test_write_csv_saves_header_and_rows(self):
         logger = TrainingLogger()
