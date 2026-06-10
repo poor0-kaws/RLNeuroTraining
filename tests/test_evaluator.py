@@ -24,6 +24,7 @@ class FakePickAndPlaceSimulator:
         self.states = list(states)
         self.actions = []
         self.current_index = 0
+        self.close_count = 0
 
     def reset(self):
         self.current_index = 0
@@ -41,6 +42,9 @@ class FakePickAndPlaceSimulator:
             state=self.states[self.current_index],
             done=done,
         )
+
+    def close(self):
+        self.close_count += 1
 
 
 def make_state(
@@ -216,6 +220,27 @@ class EvaluatorTest(unittest.TestCase):
         self.assertEqual(len(created_simulators[0].actions), 1)
         self.assertEqual(len(created_simulators[1].actions), 1)
         self.assertEqual(len(created_simulators[2].actions), 1)
+
+    def test_evaluate_population_closes_each_simulator(self):
+        shape = make_pick_and_place_network_shape(hidden_size=4)
+        config = PickAndPlaceEvaluatorConfig(network_shape=shape, max_steps=1)
+        population = np.zeros((2, shape.genome_length))
+        created_simulators = []
+
+        def simulator_factory():
+            simulator = FakePickAndPlaceSimulator(
+                [
+                    make_state(),
+                    make_state(),
+                ]
+            )
+            created_simulators.append(simulator)
+            return simulator
+
+        evaluate_population(population, simulator_factory, config)
+
+        self.assertEqual(created_simulators[0].close_count, 1)
+        self.assertEqual(created_simulators[1].close_count, 1)
 
     def test_config_rejects_wrong_network_input_size(self):
         shape = NetworkShape(input_size=24, hidden_size=4, output_size=4)

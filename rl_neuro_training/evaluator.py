@@ -236,10 +236,25 @@ def evaluate_population(
 
     for genome in population_array:
         simulator = simulator_factory()
-        result = evaluate_genome(genome, simulator, config)
+        try:
+            result = evaluate_genome(genome, simulator, config)
+        finally:
+            close_simulator(simulator)
+
         results.append(result)
 
     return results
+
+
+def close_simulator(simulator: PickAndPlaceSimulator) -> None:
+    """Close a simulator if it provides a close method."""
+
+    close = getattr(simulator, "close", None)
+
+    if close is None:
+        return
+
+    close()
 
 
 def build_pick_and_place_observation_vector(
