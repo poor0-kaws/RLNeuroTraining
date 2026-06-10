@@ -37,6 +37,13 @@ DEFAULT_TARGET_POSITION_KEYS = (
 )
 
 
+DEFAULT_TARGET_POSITION_ATTRIBUTES = (
+    "target_pos",
+    "goal_pos",
+    "bin2_pos",
+)
+
+
 @dataclass(frozen=True, kw_only=True)
 class RobosuitePickAndPlaceConfig:
     """Settings for creating and reading a Robosuite pick-and-place env.
@@ -58,7 +65,7 @@ class RobosuitePickAndPlaceConfig:
 
     env_name: str = "PickPlace"
     robots: str = "Panda"
-    controller_name: str = "OSC_POSE"
+    controller_name: Optional[str] = None
     has_renderer: bool = True
     has_offscreen_renderer: bool = False
     use_camera_obs: bool = False
@@ -70,6 +77,7 @@ class RobosuitePickAndPlaceConfig:
     gripper_qpos_key: str = "robot0_gripper_qpos"
     object_position_keys: tuple[str, ...] = DEFAULT_OBJECT_POSITION_KEYS
     target_position_keys: tuple[str, ...] = DEFAULT_TARGET_POSITION_KEYS
+    target_position_attributes: tuple[str, ...] = DEFAULT_TARGET_POSITION_ATTRIBUTES
     is_grasped_key: Optional[str] = None
     object_speed_key: Optional[str] = None
 
@@ -86,9 +94,6 @@ class RobosuitePickAndPlaceConfig:
         if not self.robots:
             raise ValueError("robots cannot be empty")
 
-        if not self.controller_name:
-            raise ValueError("controller_name cannot be empty")
-
         if self.fully_open_gripper_width <= 0.0:
             raise ValueError("fully_open_gripper_width must be greater than zero")
 
@@ -101,9 +106,17 @@ class RobosuitePickAndPlaceConfig:
         if not self.object_position_keys:
             raise ValueError("object_position_keys cannot be empty")
 
-        if self.target_position is None and not self.target_position_keys:
+        if self.controller_name is not None and not self.controller_name:
+            raise ValueError("controller_name cannot be empty")
+
+        can_find_target_later = bool(
+            self.target_position_keys or self.target_position_attributes
+        )
+
+        if self.target_position is None and not can_find_target_later:
             raise ValueError(
-                "target_position_keys cannot be empty when target_position is not set"
+                "target_position keys or attributes are required when "
+                "target_position is not set"
             )
 
         _finite_number(self.table_height, "table_height")
@@ -211,10 +224,29 @@ class RobosuitePickAndPlaceSimulator:
         if self.config.target_position is not None:
             return _vector3(self.config.target_position, "target_position")
 
-        return _first_vector3_from_observation(
+        target_position = _optional_first_vector3_from_observation(
             observation,
             self.config.target_position_keys,
-            "target_position",
+        )
+
+        if target_position is not None:
+            return target_position
+
+        target_position = _optional_first_vector3_from_attributes(
+            self.env,
+            self.config.target_position_attributes,
+        )
+
+        if target_position is not None:
+            return target_position
+
+        tried_keys = ", ".join(self.config.target_position_keys)
+        tried_attributes = ", ".join(self.config.target_position_attributes)
+
+        raise ValueError(
+            "could not find target_position; "
+            f"tried observation keys: {tried_keys}; "
+            f"tried env attributes: {tried_attributes}"
         )
 
     def _gripper_open_amount_from_observation(
@@ -333,10 +365,11 @@ def make_robosuite_pick_and_place_simulator(
     robosuite = _import_robosuite()
     env_kwargs = dict(config.env_kwargs)
 
-    if "controller_configs" not in env_kwargs:
+    if config.controller_name is not None and "controller_configs" not in env_kwargs:
         env_kwargs["controller_configs"] = _load_controller_config(
             robosuite,
             config.controller_name,
+            config.robots,
         )
 
     env = robosuite.make(
@@ -374,20 +407,25 @@ def _import_robosuite():
     return robosuite
 
 
-def _load_controller_config(robosuite: Any, controller_name: str):
+def _load_controller_config(robosuite: Any, controller_name: str, robot_name: str):
     load_from_module = getattr(robosuite, "load_controller_config", None)
 
     if load_from_module is not None:
         return load_from_module(default_controller=controller_name)
 
     try:
-        from robosuite.controllers import load_controller_config
+        from robosuite.controllers.composite.composite_controller_factory import (
+            load_composite_controller_config,
+        )
     except ImportError as error:
         raise ImportError(
             "could not import robosuite controller loader"
         ) from error
 
-    return load_controller_config(default_controller=controller_name)
+    if controller_name == "default":
+        return load_composite_controller_config(robot=robot_name)
+
+    return load_composite_controller_config(controller=controller_name)
 
 
 def _observation_from_reset(reset_result: Any) -> Mapping[str, Any]:
@@ -448,6 +486,33 @@ def _first_vector3_from_observation(
     raise ValueError(
         f"observation is missing {name}; tried keys: {', '.join(keys)}"
     )
+
+
+def _optional_first_vector3_from_observation(
+    observation: Mapping[str, Any],
+    keys: Sequence[str],
+) -> Optional[np.ndarray]:
+    for key in keys:
+        if key in observation:
+            return _vector3(observation[key], key)
+
+    return None
+
+
+def _optional_first_vector3_from_attributes(
+    value: Any,
+    attribute_names: Sequence[str],
+) -> Optional[np.ndarray]:
+    for attribute_name in attribute_names:
+        if not hasattr(value, attribute_name):
+            continue
+
+        return _vector3(
+            getattr(value, attribute_name),
+            attribute_name,
+        )
+
+    return None
 
 
 def _joint_positions_from_observation(
